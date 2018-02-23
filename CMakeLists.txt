@@ -36,6 +36,6 @@ catkin_package(
 include_directories(include ${catkin_INCLUDE_DIRS})
 
 # Generate executable
-add_executable(ForceModulatedTask src/forceModulatedTask_node.cpp src/ForceModulatedTask.cpp src/ForceModulatedDs.cpp)
-target_link_libraries(ForceModulatedTask ${catkin_LIBRARIES} passive_ds_force_controller)
-add_dependencies(ForceModulatedTask ${PROJECT_NAME}_gencpp)
+add_executable(forceModulatedTask src/forceModulatedTask_node.cpp src/ForceModulatedTask.cpp src/ForceModulatedDs.cpp)
+target_link_libraries(forceModulatedTask ${catkin_LIBRARIES} passive_ds_force_controller)
+add_dependencies(forceModulatedTask ${PROJECT_NAME}_gencpp)

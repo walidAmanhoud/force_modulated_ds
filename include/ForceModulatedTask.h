@@ -86,6 +86,7 @@ class ForceModulatedTask
 		// End effector state variables
 		Eigen::Matrix3f _wRb;				// Current rotation matrix [m] (3x1)
 		Eigen::Vector3f _x;				// Current position [m] (3x1)
+		Eigen::Vector3f _force;				// Current position [m] (3x1)
 		Eigen::Vector4f _q;				// Current end effector quaternion (4x1)
 		Eigen::Matrix<float,6,1> _wrench;
 		Eigen::Matrix<float,6,1> _wrenchBias;
@@ -99,6 +100,7 @@ class ForceModulatedTask
 		Eigen::Vector3f _omegad;		// Desired angular velocity [rad/s] (3x1)
 		Eigen::Vector3f _xd;				// Desired position [m] (3x1)
 		Eigen::Vector3f _vd;				// Desired velocity [m/s] (3x1)
+		Eigen::Vector3f _vdm;				// Desired velocity [m/s] (3x1)
 		float _targetForce;
 
 		// Task variables

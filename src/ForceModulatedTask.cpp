@@ -5,7 +5,8 @@ ForceModulatedTask* ForceModulatedTask::me = NULL;
 ForceModulatedTask::ForceModulatedTask(ros::NodeHandle &n, double frequency):
 _n(n),
 _loopRate(frequency),
-_dt(1.0f/frequency)
+_dt(1.0f/frequency),
+_controller(_dt)
 // _fmds(originalDynamics)
 {
   me = this;
@@ -22,10 +23,12 @@ _dt(1.0f/frequency)
 
   _xd.setConstant(0.0f);
   _vd.setConstant(0.0f);
+  _vdm.setConstant(0.0f);
+  _force.setConstant(0.0f);
   _omegad.setConstant(0.0f);
   _qd.setConstant(0.0f);
 
-  _taskAttractor << -0.5f, 0.0f, 0.25f;
+  _taskAttractor << -0.6f, 0.0f, 0.30f;
   
   _planeNormal << 0.0f, 0.0f, 1.0f;
   _p << 0.0f,0.0f,0.186f;
@@ -143,8 +146,8 @@ _dt(1.0f/frequency)
   p2.x = _p(0)+0.3f*_e1(0);
   p2.x = _p(1)+0.3f*_e1(1);
   p2.x = _p(2)+0.3f*_e1(2);
-  _msgArrowMarker.scale.x = 0.1;
-  _msgArrowMarker.scale.y = 0.3;
+  _msgArrowMarker.scale.x = 0.05;
+  _msgArrowMarker.scale.y = 0.1;
   _msgArrowMarker.scale.z = 0.1;
   _msgArrowMarker.color.a = 1.0;
   _msgArrowMarker.color.r = 1.0;
@@ -218,6 +221,9 @@ void ForceModulatedTask::run()
     {
 
       _mutex.lock();
+
+      processFootMouseData();
+
       // Compute control command
       computeCommand();
 
@@ -279,6 +285,14 @@ Eigen::Vector3f ForceModulatedTask::originalDynamics(Eigen::Vector3f position)
   velocity(0) = -(R-r) * cos(T) - R * omega * sin(T);
   velocity(1) = -(R-r) * sin(T) + R * omega * cos(T);
 
+    // Bound desired velocity  
+  if(velocity.norm()>0.3f)
+  {
+    velocity *= 0.3f/velocity.norm();
+  }
+
+
+
   return velocity;
 }
 
@@ -290,56 +304,72 @@ void ForceModulatedTask::modulatedDynamics()
 
   // Extract linear speed, force and torque data
   Eigen::Vector3f v = _twist.segment(0,3);
-  Eigen::Vector3f force = _filteredWrench.segment(0,3);  
-  Eigen::Vector3f torque = _filteredWrench.segment(3,3);
+  _force = _wRb*_filteredWrench.segment(0,3);  
+  Eigen::Vector3f torque = _wRb*_filteredWrench.segment(3,3);
 
   _vd = originalDynamics(_x);
 
-  // Bound desired velocity  
-  if(_vd.norm()>0.3f)
-  {
-    _vd *= 0.3f/_vd.norm();
-  }
+  Eigen::Matrix3f P;
+  P = Eigen::Matrix3f::Identity()-_e1*_e1.transpose();
+  // _vd = P*_vd;
 
-  Eigen::Vector3f vdm;
-  float forceValue = std::max(0.0f,_wRb.col(2).dot(-force));
+  _vdm = _vd;
+  float forceValue = fabs(_wRb.col(2).dot(-_force));
   Eigen::Matrix3f M;
   M.setIdentity();
 
   _usedForTraining = false;
   if(_buttonPressed)
   {
-    if(currentTime-_previousTime>0.005f && forceValue>3.0f)
+      // std::cerr << "Bou: " << std::endl;
+
+    if(currentTime-_previousTime>0.05f)
     {
       _count++;
-      _fmds.addData(_x,_wRb.col(2),forceValue/_lambda1);
+      _fmds.addData(_x,_wRb.col(2),forceValue/_lambda1-std::min(0.0f,_vd.dot(_wRb.col(2))));
+      // _fmds.addData(_x,_wRb.col(2),v);
       _previousTime = currentTime;
       _usedForTraining = true;
     }
   }
   else
   {
-    if(_count>500)
+    if(_count>100)
     {
-      vdm = _fmds.getModulatedDynamics(_x);
+      _vdm = _fmds.getModulatedDynamics(_x);
+      // _vdm = _fmds.getModulatedDynamics(_x,_targetForce/_lambda1);
       _e1 = _fmds.getEstimatedNormal();
       M = _fmds.getModulationMatrix();
     }
   }
 
-  std::cerr << "Count: " << _count << "force: " << forceValue << std::endl;
+
+  // // Bound desired velocity  
+  // if(_vdm.norm()>0.3f)
+  // {
+  //   _vdm *= 0.3f/_vdm.norm();
+  // }
+
+  std::cerr << "Count: " << _count << " force: " << forceValue << std::endl;
   std::cerr << "e1: " << _e1.transpose() << std::endl;
+  // std::cerr << "_vdm: " << _vdm.transpose() << std::endl;
+  // std::cerr << "vd: " << _vd.transpose() << std::endl;
+  // std::cerr << "vdn: " << _vd.norm() << " vdmn: " << _vdm.norm() << std::endl;
+
+  // std::cerr << M << std::endl;
 
   _controller.updateDampingGains(_lambda1,_lambda2);
 
-  Eigen::Vector3f Ftemp = _controller.step(_vd,v);
+  Eigen::Vector3f Ftemp = _controller.step(_vdm,v);
   _Fc = Ftemp;
 
   // Compute rotation error between current orientation and plane orientation using Rodrigues' law
   Eigen::Matrix3f K;
   Eigen::Vector3f k;
-  k = (-_wRb.col(2)).cross(_planeNormal);
-  float c = (-_wRb.col(2)).transpose()*_planeNormal;  
+  // k = (-_wRb.col(2)).cross(_planeNormal);
+  // float c = (-_wRb.col(2)).transpose()*_planeNormal;  
+  k = (_wRb.col(2)).cross(_e1);
+  float c = (_wRb.col(2)).transpose()*_e1;  
   float s = k.norm();
   k /= s;
   K << getSkewSymmetricMatrix(k);
@@ -567,15 +597,21 @@ void ForceModulatedTask::processFootMouseData(void)
 
 void ForceModulatedTask::processABButtonEvent(int value, bool newEvent, int direction)
 {
+  // std::cerr << "bou" << std::endl;
   if(newEvent)
   {
-    if(value>0) // Button pressed
+    if(value>0 && direction == -1) // Button pressed
     {
       _buttonPressed = true;
     }
     else
     {
       _buttonPressed = false;
+    }
+
+    if(value > 0 && direction == 1)
+    {
+      _stop = true;
     }
   }
 }
@@ -715,7 +751,10 @@ void ForceModulatedTask::logData()
   _outputFile << ros::Time::now() << " " << (int) _usedForTraining 
               << " " << _x(0) << " " << _x(1) << " " << _x(2) 
               << " " << _wRb(0,2) << " " << _wRb(1,2) << " " << _wRb(2,2) 
-              << " " << _filteredWrench(0) << " " << _filteredWrench(1) << " " << _filteredWrench(2)
+              << " " << _force(0) << " " << _force(1) << " " << _force(2)
+              << " " << _vd(0) << " " << _vd(1) << " " << _vd(2)
+              << " " << _vdm(0) << " " << _vdm(1) << " " << _vdm(2)
+              << " " << _e1(0) << " " << _e1(1) << " " << _e1(2)
               << " " << std::endl;
 }
 

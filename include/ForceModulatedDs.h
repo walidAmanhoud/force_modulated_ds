@@ -31,6 +31,10 @@ class ForceModulatedDs
 		Eigen::Vector3f getModulatedDynamics(Eigen::Vector3f position);
 		void setOriginalDynamics(std::function<Eigen::Vector3f(Eigen::Vector3f)> originalDynamics);
 		void addData(Eigen::Vector3f position, Eigen::Vector3f orientation, float force);
+		Eigen::Vector3f getModulatedDynamics(Eigen::Vector3f position, float Fd);
+		void addData(Eigen::Vector3f position, Eigen::Vector3f orientation, Eigen::Vector3f velocity);
+		Eigen::Vector3f computeReshapingParameters(Eigen::Vector3f orientation, Eigen::Vector3f velocity);
+
 	
 	private:
 
